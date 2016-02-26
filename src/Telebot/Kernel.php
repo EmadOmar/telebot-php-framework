@@ -34,10 +34,26 @@ class Kernel {
     protected $errorHandler;
 
     /**
+     * A RegEx to distinguish command messages from regular text messages
+     * @var string
+     */
+    protected $commandPrefix = '/^\//i';
+
+    /**
      * Response data
      * @var array
      */
     protected $response;
+
+    /**
+     * List of callable handlers
+     * @var array
+     */
+    protected $handlers = [
+        'command' => null,
+        'media' => null,
+        'text' => null,
+    ];
 
     public function __construct($botToken) {
         $this->botToken = $botToken;
@@ -87,7 +103,14 @@ class Kernel {
             );
         }
 
-        $this->handleUpdate($update);
+        try {
+            $this->renderResponse(
+                $this->handleUpdate($update),
+                200
+            );
+        } catch (Exception $e) {
+            return $this->handleError($e);
+        }
     }
 
     public function showResponse() {
@@ -99,6 +122,15 @@ class Kernel {
      */
     public function setErrorHandler($errorHandler) {
         $this->errorHandler = $errorHandler;
+    }
+
+    /**
+     * @param array $handlers
+     */
+    public function setHandlers(array $handlers) {
+        $this->handlers = array_merge(
+            $this->handlers, $handlers
+        );
     }
 
     /**
@@ -128,8 +160,62 @@ class Kernel {
         $this->response = compact('data', 'status');
     }
 
+    /**
+     * @param Update $update
+     *
+     * @return array
+     */
     protected function handleUpdate($update) {
+        // Check if the update is not a text message
+        if (!isset($update->message->text)) {
+            return $this->handleMedia($update);
+        }
+
+        // Check if text message is a command
+        if (preg_match($this->commandPrefix, $update->message->text)) {
+            return $this->handleCommand($update);
+        }
+
+        return $this->handleText($update);
     }
 
+    /**
+     * @param Update $update
+     *
+     * @return array
+     */
+    protected function handleCommand($update) {
+        if (is_callable($this->handlers['command'])) {
+            return call_user_func($this->handlers['command'], $update);
+        }
+
+        return [];
+    }
+
+    /**
+     * @param Update $update
+     *
+     * @return array
+     */
+    protected function handleText($update) {
+        if (is_callable($this->handlers['text'])) {
+            return call_user_func($this->handlers['text'], $update);
+        }
+
+        return [];
+    }
+
+    /**
+     * @param Update $update
+     *
+     * @return array
+     */
+    protected function handleMedia($update) {
+        if (is_callable($this->handlers['media'])) {
+            return call_user_func($this->handlers['media'], $update);
+        }
+
+        return [];
+    }
 
 }
